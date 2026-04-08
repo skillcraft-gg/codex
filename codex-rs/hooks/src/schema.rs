@@ -331,6 +331,14 @@ pub(crate) struct UserPromptSubmitCommandInput {
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "stop.command.input")]
+pub(crate) struct StopCommandInputSkill {
+    pub name: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "stop.command.input")]
 pub(crate) struct StopCommandInput {
     pub session_id: String,
     /// Codex extension: expose the active turn id to internal turn-scoped hooks.
@@ -344,6 +352,8 @@ pub(crate) struct StopCommandInput {
     pub permission_mode: String,
     pub stop_hook_active: bool,
     pub last_assistant_message: NullableString,
+    pub mentioned_skills: Vec<StopCommandInputSkill>,
+    pub implicit_skills: Vec<StopCommandInputSkill>,
 }
 
 pub fn write_schema_fixtures(schema_root: &Path) -> anyhow::Result<()> {

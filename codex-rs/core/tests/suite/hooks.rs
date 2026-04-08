@@ -36,6 +36,14 @@ const FIRST_CONTINUATION_PROMPT: &str = "Retry with exactly the phrase meow meow
 const SECOND_CONTINUATION_PROMPT: &str = "Now tighten it to just: meow.";
 const BLOCKED_PROMPT_CONTEXT: &str = "Remember the blocked lighthouse note.";
 
+fn write_skill(home: &Path, name: &str, description: &str, body: &str) -> Result<()> {
+    let skill_dir = home.join("skills").join(name);
+    fs::create_dir_all(&skill_dir).context("create skill fixture directory")?;
+    let contents = format!("---\nname: {name}\ndescription: {description}\n---\n\n{body}\n");
+    fs::write(skill_dir.join("SKILL.md"), contents).context("write skill fixture")?;
+    Ok(())
+}
+
 fn write_stop_hook(home: &Path, block_prompts: &[&str]) -> Result<()> {
     let script_path = home.join("stop_hook.py");
     let log_path = home.join("stop_hook_log.jsonl");
@@ -613,6 +621,133 @@ async fn session_start_hook_sees_materialized_transcript_path() -> Result<()> {
         Some(false)
     );
     assert_eq!(hook_inputs[0].get("exists"), Some(&Value::Bool(true)));
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stop_hook_receives_mentioned_skills_for_explicit_skill_turn() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let _response = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_assistant_message("msg-1", "used the requested skill"),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+
+    let mut builder = test_codex()
+        .with_pre_build_hook(|home| {
+            if let Err(error) = write_stop_hook(home, &[]) {
+                panic!("failed to write stop hook fixture: {error}");
+            }
+            if let Err(error) = write_skill(home, "demo", "demo skill", "skill body") {
+                panic!("failed to write skill fixture: {error}");
+            }
+        })
+        .with_config(|config| {
+            config
+                .features
+                .enable(Feature::CodexHooks)
+                .expect("test config should allow feature update");
+        });
+    let test = builder.build(&server).await?;
+
+    test.submit_turn("please use $demo").await?;
+
+    let hook_inputs = read_stop_hook_inputs(test.codex_home_path())?;
+    assert_eq!(hook_inputs.len(), 1);
+    let mentioned_skills = hook_inputs[0]["mentioned_skills"]
+        .as_array()
+        .expect("stop hook mentioned_skills array");
+    assert_eq!(mentioned_skills.len(), 1);
+    assert_eq!(
+        mentioned_skills[0]["name"],
+        Value::String("demo".to_string())
+    );
+    let skill_path = mentioned_skills[0]["path"]
+        .as_str()
+        .expect("mentioned skill path string");
+    assert!(skill_path.ends_with("/skills/demo/SKILL.md"));
+    assert!(Path::new(skill_path).exists());
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stop_hook_receives_implicit_skills_for_shell_invocation_turn() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+
+    let mut builder = test_codex()
+        .with_pre_build_hook(|home| {
+            if let Err(error) = write_stop_hook(home, &[]) {
+                panic!("failed to write stop hook fixture: {error}");
+            }
+            if let Err(error) = write_skill(home, "demo", "demo skill", "skill body") {
+                panic!("failed to write skill fixture: {error}");
+            }
+        })
+        .with_config(|config| {
+            config
+                .features
+                .enable(Feature::CodexHooks)
+                .expect("test config should allow feature update");
+        });
+    let test = builder.build(&server).await?;
+    let skill_path = test
+        .home
+        .path()
+        .join("skills")
+        .join("demo")
+        .join("SKILL.md");
+    let args = serde_json::json!({
+        "command": format!("cat {}", skill_path.display())
+    });
+    let _responses = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                ev_response_created("resp-1"),
+                core_test_support::responses::ev_function_call(
+                    "implicit-skill-call",
+                    "shell_command",
+                    &serde_json::to_string(&args)?,
+                ),
+                ev_completed("resp-1"),
+            ]),
+            sse(vec![
+                ev_response_created("resp-2"),
+                ev_assistant_message("msg-1", "used the implicit skill"),
+                ev_completed("resp-2"),
+            ]),
+        ],
+    )
+    .await;
+
+    test.submit_turn("read the demo skill file and then answer")
+        .await?;
+
+    let hook_inputs = read_stop_hook_inputs(test.codex_home_path())?;
+    assert_eq!(hook_inputs.len(), 1);
+    let implicit_skills = hook_inputs[0]["implicit_skills"]
+        .as_array()
+        .expect("stop hook implicit_skills array");
+    assert_eq!(implicit_skills.len(), 1);
+    assert_eq!(
+        implicit_skills[0]["name"],
+        Value::String("demo".to_string())
+    );
+    let skill_path = implicit_skills[0]["path"]
+        .as_str()
+        .expect("implicit skill path string");
+    assert!(skill_path.ends_with("/skills/demo/SKILL.md"));
+    assert!(Path::new(skill_path).exists());
 
     Ok(())
 }

@@ -208,6 +208,13 @@ pub(crate) async fn maybe_emit_implicit_skill_invocation(
         return;
     }
 
+    turn_context
+        .turn_skills
+        .implicit_invocations
+        .lock()
+        .await
+        .push(invocation.clone());
+
     turn_context.session_telemetry.counter(
         "codex.skill.injected",
         /*inc*/ 1,

@@ -19,6 +19,12 @@ use crate::schema::NullableString;
 use crate::schema::StopCommandInput;
 
 #[derive(Debug, Clone)]
+pub struct StopHookSkillReference {
+    pub name: String,
+    pub path: PathBuf,
+}
+
+#[derive(Debug, Clone)]
 pub struct StopRequest {
     pub session_id: ThreadId,
     pub turn_id: String,
@@ -28,6 +34,8 @@ pub struct StopRequest {
     pub permission_mode: String,
     pub stop_hook_active: bool,
     pub last_assistant_message: Option<String>,
+    pub mentioned_skills: Vec<StopHookSkillReference>,
+    pub implicit_skills: Vec<StopHookSkillReference>,
 }
 
 #[derive(Debug)]
@@ -87,6 +95,22 @@ pub(crate) async fn run(
         permission_mode: request.permission_mode.clone(),
         stop_hook_active: request.stop_hook_active,
         last_assistant_message: NullableString::from_string(request.last_assistant_message.clone()),
+        mentioned_skills: request
+            .mentioned_skills
+            .iter()
+            .map(|skill| crate::schema::StopCommandInputSkill {
+                name: skill.name.clone(),
+                path: skill.path.display().to_string(),
+            })
+            .collect(),
+        implicit_skills: request
+            .implicit_skills
+            .iter()
+            .map(|skill| crate::schema::StopCommandInputSkill {
+                name: skill.name.clone(),
+                path: skill.path.display().to_string(),
+            })
+            .collect(),
     }) {
         Ok(input_json) => input_json,
         Err(error) => {

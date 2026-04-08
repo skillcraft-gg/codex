@@ -7,6 +7,22 @@
         "string",
         "null"
       ]
+    },
+    "stop.command.input": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "path"
+      ],
+      "type": "object"
     }
   },
   "properties": {
@@ -17,8 +33,20 @@
       "const": "Stop",
       "type": "string"
     },
+    "implicit_skills": {
+      "items": {
+        "$ref": "#/definitions/stop.command.input"
+      },
+      "type": "array"
+    },
     "last_assistant_message": {
       "$ref": "#/definitions/NullableString"
+    },
+    "mentioned_skills": {
+      "items": {
+        "$ref": "#/definitions/stop.command.input"
+      },
+      "type": "array"
     },
     "model": {
       "type": "string"
@@ -50,7 +78,9 @@
   "required": [
     "cwd",
     "hook_event_name",
+    "implicit_skills",
     "last_assistant_message",
+    "mentioned_skills",
     "model",
     "permission_mode",
     "session_id",

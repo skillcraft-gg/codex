@@ -51,6 +51,7 @@ use chrono::Utc;
 use codex_analytics::AnalyticsEventsClient;
 use codex_analytics::AppInvocation;
 use codex_analytics::InvocationType;
+use codex_analytics::SkillInvocation;
 use codex_analytics::SubAgentThreadStartedInput;
 use codex_analytics::build_track_events_context;
 use codex_app_server_protocol::McpServerElicitationRequest;
@@ -837,6 +838,7 @@ pub(crate) struct Session {
 pub(crate) struct TurnSkillsContext {
     pub(crate) outcome: Arc<SkillLoadOutcome>,
     pub(crate) implicit_invocation_seen_skills: Arc<Mutex<HashSet<String>>>,
+    pub(crate) implicit_invocations: Arc<Mutex<Vec<SkillInvocation>>>,
 }
 
 impl TurnSkillsContext {
@@ -844,6 +846,7 @@ impl TurnSkillsContext {
         Self {
             outcome,
             implicit_invocation_seen_skills: Arc::new(Mutex::new(HashSet::new())),
+            implicit_invocations: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }
@@ -6209,6 +6212,17 @@ pub(crate) async fn run_turn(
                         | AskForApproval::Granular(_) => "default",
                     }
                     .to_string();
+                    let implicit_skills = turn_context
+                        .turn_skills
+                        .implicit_invocations
+                        .lock()
+                        .await
+                        .iter()
+                        .map(|skill| codex_hooks::StopHookSkillReference {
+                            name: skill.skill_name.clone(),
+                            path: skill.skill_path.clone(),
+                        })
+                        .collect();
                     let stop_request = codex_hooks::StopRequest {
                         session_id: sess.conversation_id,
                         turn_id: turn_context.sub_id.clone(),
@@ -6218,6 +6232,14 @@ pub(crate) async fn run_turn(
                         permission_mode: stop_hook_permission_mode,
                         stop_hook_active,
                         last_assistant_message: last_agent_message.clone(),
+                        mentioned_skills: mentioned_skills
+                            .iter()
+                            .map(|skill| codex_hooks::StopHookSkillReference {
+                                name: skill.name.clone(),
+                                path: skill.path_to_skills_md.clone(),
+                            })
+                            .collect(),
+                        implicit_skills,
                     };
                     for run in sess.hooks().preview_stop(&stop_request) {
                         sess.send_event(
