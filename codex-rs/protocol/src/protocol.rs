@@ -1580,6 +1580,8 @@ pub struct AddCreditsNudgeEmailResponseEvent {
 pub enum HookEventName {
     PreToolUse,
     PostToolUse,
+    PreSkillUse,
+    PostSkillUse,
     SessionStart,
     UserPromptSubmit,
     Stop,

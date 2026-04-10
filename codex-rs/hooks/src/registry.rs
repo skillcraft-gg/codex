@@ -3,8 +3,12 @@ use tokio::process::Command;
 
 use crate::engine::ClaudeHooksEngine;
 use crate::engine::CommandShell;
+use crate::events::post_skill_use::PostSkillUseOutcome;
+use crate::events::post_skill_use::PostSkillUseRequest;
 use crate::events::post_tool_use::PostToolUseOutcome;
 use crate::events::post_tool_use::PostToolUseRequest;
+use crate::events::pre_skill_use::PreSkillUseOutcome;
+use crate::events::pre_skill_use::PreSkillUseRequest;
 use crate::events::pre_tool_use::PreToolUseOutcome;
 use crate::events::pre_tool_use::PreToolUseRequest;
 use crate::events::session_start::SessionStartOutcome;
@@ -110,6 +114,20 @@ impl Hooks {
         self.engine.preview_post_tool_use(request)
     }
 
+    pub fn preview_pre_skill_use(
+        &self,
+        request: &PreSkillUseRequest,
+    ) -> Vec<codex_protocol::protocol::HookRunSummary> {
+        self.engine.preview_pre_skill_use(request)
+    }
+
+    pub fn preview_post_skill_use(
+        &self,
+        request: &PostSkillUseRequest,
+    ) -> Vec<codex_protocol::protocol::HookRunSummary> {
+        self.engine.preview_post_skill_use(request)
+    }
+
     pub async fn run_session_start(
         &self,
         request: SessionStartRequest,
@@ -124,6 +142,14 @@ impl Hooks {
 
     pub async fn run_post_tool_use(&self, request: PostToolUseRequest) -> PostToolUseOutcome {
         self.engine.run_post_tool_use(request).await
+    }
+
+    pub async fn run_pre_skill_use(&self, request: PreSkillUseRequest) -> PreSkillUseOutcome {
+        self.engine.run_pre_skill_use(request).await
+    }
+
+    pub async fn run_post_skill_use(&self, request: PostSkillUseRequest) -> PostSkillUseOutcome {
+        self.engine.run_post_skill_use(request).await
     }
 
     pub fn preview_user_prompt_submit(

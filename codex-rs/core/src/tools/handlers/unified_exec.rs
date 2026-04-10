@@ -1,5 +1,9 @@
+use crate::detect_implicit_skill_invocation;
 use crate::function_tool::FunctionCallError;
-use crate::maybe_emit_implicit_skill_invocation;
+use crate::hook_runtime::record_additional_contexts;
+use crate::hook_runtime::run_post_skill_use_hooks;
+use crate::hook_runtime::run_pre_skill_use_hooks;
+use crate::record_implicit_skill_invocation;
 use crate::sandboxing::SandboxPermissions;
 use crate::shell::Shell;
 use crate::shell::get_shell_by_model_provided_path;
@@ -191,13 +195,11 @@ impl ToolHandler for UnifiedExecHandler {
                 let cwd = resolve_workdir_base_path(&arguments, &context.turn.cwd)?;
                 let args: ExecCommandArgs = parse_arguments_with_base_path(&arguments, &cwd)?;
                 let workdir = context.turn.resolve_path(args.workdir.clone());
-                maybe_emit_implicit_skill_invocation(
-                    session.as_ref(),
-                    context.turn.as_ref(),
-                    &args.cmd,
-                    &workdir,
-                )
-                .await;
+                let implicit_skill =
+                    detect_implicit_skill_invocation(context.turn.as_ref(), &args.cmd, &workdir);
+                if let Some(invocation) = implicit_skill.as_ref() {
+                    run_pre_skill_use_hooks(&session, &turn, invocation).await;
+                }
                 let process_id = manager.allocate_process_id().await;
                 let command = get_command(
                     &args,
@@ -308,7 +310,7 @@ impl ToolHandler for UnifiedExecHandler {
                 }
 
                 emit_unified_exec_tty_metric(&turn.session_telemetry, tty);
-                manager
+                let response = manager
                     .exec_command(
                         ExecCommandRequest {
                             command,
@@ -333,7 +335,17 @@ impl ToolHandler for UnifiedExecHandler {
                         FunctionCallError::RespondToModel(format!(
                             "exec_command failed for `{command_for_display}`: {err:?}"
                         ))
-                    })?
+                    })?;
+
+                if let Some(invocation) = implicit_skill.as_ref()
+                    && record_implicit_skill_invocation(session.as_ref(), turn.as_ref(), invocation)
+                        .await
+                {
+                    let outcome = run_post_skill_use_hooks(&session, &turn, invocation).await;
+                    record_additional_contexts(&session, &turn, outcome.additional_contexts).await;
+                }
+
+                response
             }
             "write_stdin" => {
                 let args: WriteStdinArgs = parse_arguments(&arguments)?;

@@ -14,14 +14,7 @@
       ],
       "type": "string"
     },
-    "PreToolUseDecisionWire": {
-      "enum": [
-        "approve",
-        "block"
-      ],
-      "type": "string"
-    },
-    "PreToolUseHookSpecificOutputWire": {
+    "PostSkillUseHookSpecificOutputWire": {
       "additionalProperties": false,
       "properties": {
         "additionalContext": {
@@ -30,35 +23,12 @@
         },
         "hookEventName": {
           "$ref": "#/definitions/HookEventNameWire"
-        },
-        "permissionDecision": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/PreToolUsePermissionDecisionWire"
-            }
-          ],
-          "default": null
-        },
-        "permissionDecisionReason": {
-          "default": null,
-          "type": "string"
-        },
-        "updatedInput": {
-          "default": null
         }
       },
       "required": [
         "hookEventName"
       ],
       "type": "object"
-    },
-    "PreToolUsePermissionDecisionWire": {
-      "enum": [
-        "allow",
-        "deny",
-        "ask"
-      ],
-      "type": "string"
     }
   },
   "properties": {
@@ -66,25 +36,13 @@
       "default": true,
       "type": "boolean"
     },
-    "decision": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/PreToolUseDecisionWire"
-        }
-      ],
-      "default": null
-    },
     "hookSpecificOutput": {
       "allOf": [
         {
-          "$ref": "#/definitions/PreToolUseHookSpecificOutputWire"
+          "$ref": "#/definitions/PostSkillUseHookSpecificOutputWire"
         }
       ],
       "default": null
-    },
-    "reason": {
-      "default": null,
-      "type": "string"
     },
     "stopReason": {
       "default": null,
@@ -99,6 +57,6 @@
       "type": "string"
     }
   },
-  "title": "pre-tool-use.command.output",
+  "title": "post-skill-use.command.output",
   "type": "object"
 }

@@ -65,6 +65,8 @@ pub(crate) fn discover_handlers(config_layer_stack: Option<&ConfigLayerStack>) -
         let super::config::HookEvents {
             pre_tool_use,
             post_tool_use,
+            pre_skill_use,
+            post_skill_use,
             session_start,
             user_prompt_submit,
             stop,
@@ -78,6 +80,14 @@ pub(crate) fn discover_handlers(config_layer_stack: Option<&ConfigLayerStack>) -
             (
                 codex_protocol::protocol::HookEventName::PostToolUse,
                 post_tool_use,
+            ),
+            (
+                codex_protocol::protocol::HookEventName::PreSkillUse,
+                pre_skill_use,
+            ),
+            (
+                codex_protocol::protocol::HookEventName::PostSkillUse,
+                post_skill_use,
             ),
             (
                 codex_protocol::protocol::HookEventName::SessionStart,

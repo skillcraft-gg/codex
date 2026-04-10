@@ -168,25 +168,30 @@ async fn request_skill_dependencies(
     sess.set_dependency_env(values).await;
 }
 
-pub(crate) async fn maybe_emit_implicit_skill_invocation(
-    sess: &Session,
+pub(crate) fn detect_implicit_skill_invocation(
     turn_context: &TurnContext,
     command: &str,
     workdir: &Path,
-) {
-    let Some(candidate) = detect_implicit_skill_invocation_for_command(
+) -> Option<SkillInvocation> {
+    let candidate = detect_implicit_skill_invocation_for_command(
         turn_context.turn_skills.outcome.as_ref(),
         command,
         workdir,
-    ) else {
-        return;
-    };
-    let invocation = SkillInvocation {
+    )?;
+
+    Some(SkillInvocation {
         skill_name: candidate.name,
         skill_scope: candidate.scope,
         skill_path: candidate.path_to_skills_md,
         invocation_type: InvocationType::Implicit,
-    };
+    })
+}
+
+pub(crate) async fn record_implicit_skill_invocation(
+    sess: &Session,
+    turn_context: &TurnContext,
+    invocation: &SkillInvocation,
+) -> bool {
     let skill_scope = match invocation.skill_scope {
         SkillScope::User => "user",
         SkillScope::Repo => "repo",
@@ -205,7 +210,7 @@ pub(crate) async fn maybe_emit_implicit_skill_invocation(
         seen_skills.insert(seen_key)
     };
     if !inserted {
-        return;
+        return false;
     }
 
     turn_context.session_telemetry.counter(
@@ -225,6 +230,8 @@ pub(crate) async fn maybe_emit_implicit_skill_invocation(
                 sess.conversation_id.to_string(),
                 turn_context.sub_id.clone(),
             ),
-            vec![invocation],
+            vec![invocation.clone()],
         );
+
+    true
 }

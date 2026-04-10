@@ -10,8 +10,12 @@ use std::path::PathBuf;
 use codex_config::ConfigLayerStack;
 use codex_protocol::protocol::HookRunSummary;
 
+use crate::events::post_skill_use::PostSkillUseOutcome;
+use crate::events::post_skill_use::PostSkillUseRequest;
 use crate::events::post_tool_use::PostToolUseOutcome;
 use crate::events::post_tool_use::PostToolUseRequest;
+use crate::events::pre_skill_use::PreSkillUseOutcome;
+use crate::events::pre_skill_use::PreSkillUseRequest;
 use crate::events::pre_tool_use::PreToolUseOutcome;
 use crate::events::pre_tool_use::PreToolUseRequest;
 use crate::events::session_start::SessionStartOutcome;
@@ -52,6 +56,8 @@ impl ConfiguredHandler {
         match self.event_name {
             codex_protocol::protocol::HookEventName::PreToolUse => "pre-tool-use",
             codex_protocol::protocol::HookEventName::PostToolUse => "post-tool-use",
+            codex_protocol::protocol::HookEventName::PreSkillUse => "pre-skill-use",
+            codex_protocol::protocol::HookEventName::PostSkillUse => "post-skill-use",
             codex_protocol::protocol::HookEventName::SessionStart => "session-start",
             codex_protocol::protocol::HookEventName::UserPromptSubmit => "user-prompt-submit",
             codex_protocol::protocol::HookEventName::Stop => "stop",
@@ -111,6 +117,20 @@ impl ClaudeHooksEngine {
         crate::events::post_tool_use::preview(&self.handlers, request)
     }
 
+    pub(crate) fn preview_pre_skill_use(
+        &self,
+        request: &PreSkillUseRequest,
+    ) -> Vec<HookRunSummary> {
+        crate::events::pre_skill_use::preview(&self.handlers, request)
+    }
+
+    pub(crate) fn preview_post_skill_use(
+        &self,
+        request: &PostSkillUseRequest,
+    ) -> Vec<HookRunSummary> {
+        crate::events::post_skill_use::preview(&self.handlers, request)
+    }
+
     pub(crate) async fn run_session_start(
         &self,
         request: SessionStartRequest,
@@ -128,6 +148,20 @@ impl ClaudeHooksEngine {
         request: PostToolUseRequest,
     ) -> PostToolUseOutcome {
         crate::events::post_tool_use::run(&self.handlers, &self.shell, request).await
+    }
+
+    pub(crate) async fn run_pre_skill_use(
+        &self,
+        request: PreSkillUseRequest,
+    ) -> PreSkillUseOutcome {
+        crate::events::pre_skill_use::run(&self.handlers, &self.shell, request).await
+    }
+
+    pub(crate) async fn run_post_skill_use(
+        &self,
+        request: PostSkillUseRequest,
+    ) -> PostSkillUseOutcome {
+        crate::events::post_skill_use::run(&self.handlers, &self.shell, request).await
     }
 
     pub(crate) fn preview_user_prompt_submit(

@@ -1,0 +1,9 @@
+---
+source: tui/src/chatwidget/tests/helpers.rs
+expression: combined
+---
+• Running PostSkillUse hook: warming the skill hook
+
+PostSkillUse hook (completed)
+  warning: Heads up from the hook
+  hook context: Remember the startup checklist.

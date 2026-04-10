@@ -5,12 +5,16 @@ use serde_json::Value as JsonValue;
 use std::sync::Arc;
 
 use crate::codex::TurnContext;
+use crate::detect_implicit_skill_invocation;
 use crate::exec::ExecCapturePolicy;
 use crate::exec::ExecParams;
 use crate::exec_env::create_env;
 use crate::exec_policy::ExecApprovalRequest;
 use crate::function_tool::FunctionCallError;
-use crate::maybe_emit_implicit_skill_invocation;
+use crate::hook_runtime::record_additional_contexts;
+use crate::hook_runtime::run_post_skill_use_hooks;
+use crate::hook_runtime::run_pre_skill_use_hooks;
+use crate::record_implicit_skill_invocation;
 use crate::shell::Shell;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
@@ -346,13 +350,13 @@ impl ToolHandler for ShellCommandHandler {
         let cwd = resolve_workdir_base_path(&arguments, &turn.cwd)?;
         let params: ShellCommandToolCallParams = parse_arguments_with_base_path(&arguments, &cwd)?;
         let workdir = turn.resolve_path(params.workdir.clone());
-        maybe_emit_implicit_skill_invocation(
-            session.as_ref(),
-            turn.as_ref(),
-            &params.command,
-            &workdir,
-        )
-        .await;
+        let implicit_skill =
+            detect_implicit_skill_invocation(turn.as_ref(), &params.command, &workdir);
+        if let Some(invocation) = implicit_skill.as_ref() {
+            run_pre_skill_use_hooks(&session, &turn, invocation).await;
+        }
+        let session_for_skill_hooks = Arc::clone(&session);
+        let turn_for_skill_hooks = Arc::clone(&turn);
         let prefix_rule = params.prefix_rule.clone();
         let exec_params = Self::to_exec_params(
             &params,
@@ -361,7 +365,7 @@ impl ToolHandler for ShellCommandHandler {
             session.conversation_id,
             turn.tools_config.allow_login_shell,
         )?;
-        ShellHandler::run_exec_like(RunExecLikeArgs {
+        let output = ShellHandler::run_exec_like(RunExecLikeArgs {
             tool_name,
             exec_params,
             additional_permissions: params.additional_permissions.clone(),
@@ -373,7 +377,31 @@ impl ToolHandler for ShellCommandHandler {
             freeform: true,
             shell_runtime_backend: self.shell_runtime_backend(),
         })
-        .await
+        .await?;
+
+        if let Some(invocation) = implicit_skill.as_ref()
+            && record_implicit_skill_invocation(
+                session_for_skill_hooks.as_ref(),
+                turn_for_skill_hooks.as_ref(),
+                invocation,
+            )
+            .await
+        {
+            let outcome = run_post_skill_use_hooks(
+                &session_for_skill_hooks,
+                &turn_for_skill_hooks,
+                invocation,
+            )
+            .await;
+            record_additional_contexts(
+                &session_for_skill_hooks,
+                &turn_for_skill_hooks,
+                outcome.additional_contexts,
+            )
+            .await;
+        }
+
+        Ok(output)
     }
 }
 

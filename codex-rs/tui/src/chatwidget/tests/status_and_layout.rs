@@ -1519,6 +1519,28 @@ async fn post_tool_use_hook_events_render_snapshot() {
 }
 
 #[tokio::test]
+async fn pre_skill_use_hook_events_render_snapshot() {
+    assert_hook_events_snapshot(
+        codex_protocol::protocol::HookEventName::PreSkillUse,
+        "pre-skill-use:0:/tmp/hooks.json",
+        "warming the skill hook",
+        "pre_skill_use_hook_events_render_snapshot",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn post_skill_use_hook_events_render_snapshot() {
+    assert_hook_events_snapshot(
+        codex_protocol::protocol::HookEventName::PostSkillUse,
+        "post-skill-use:0:/tmp/hooks.json",
+        "warming the skill hook",
+        "post_skill_use_hook_events_render_snapshot",
+    )
+    .await;
+}
+
+#[tokio::test]
 async fn session_start_hook_events_render_snapshot() {
     assert_hook_events_snapshot(
         codex_protocol::protocol::HookEventName::SessionStart,

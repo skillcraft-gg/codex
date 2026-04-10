@@ -12,6 +12,8 @@
       "enum": [
         "PreToolUse",
         "PostToolUse",
+        "PreSkillUse",
+        "PostSkillUse",
         "SessionStart",
         "UserPromptSubmit",
         "Stop"

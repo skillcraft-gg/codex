@@ -1,5 +1,7 @@
 pub(crate) mod common;
+pub mod post_skill_use;
 pub mod post_tool_use;
+pub mod pre_skill_use;
 pub mod pre_tool_use;
 pub mod session_start;
 pub mod stop;

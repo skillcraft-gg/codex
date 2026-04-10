@@ -12,6 +12,10 @@ pub(crate) struct HookEvents {
     pub pre_tool_use: Vec<MatcherGroup>,
     #[serde(rename = "PostToolUse", default)]
     pub post_tool_use: Vec<MatcherGroup>,
+    #[serde(rename = "PreSkillUse", default)]
+    pub pre_skill_use: Vec<MatcherGroup>,
+    #[serde(rename = "PostSkillUse", default)]
+    pub post_skill_use: Vec<MatcherGroup>,
     #[serde(rename = "SessionStart", default)]
     pub session_start: Vec<MatcherGroup>,
     #[serde(rename = "UserPromptSubmit", default)]

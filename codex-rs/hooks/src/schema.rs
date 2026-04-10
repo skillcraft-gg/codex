@@ -15,8 +15,12 @@ use std::path::PathBuf;
 const GENERATED_DIR: &str = "generated";
 const POST_TOOL_USE_INPUT_FIXTURE: &str = "post-tool-use.command.input.schema.json";
 const POST_TOOL_USE_OUTPUT_FIXTURE: &str = "post-tool-use.command.output.schema.json";
+const POST_SKILL_USE_INPUT_FIXTURE: &str = "post-skill-use.command.input.schema.json";
+const POST_SKILL_USE_OUTPUT_FIXTURE: &str = "post-skill-use.command.output.schema.json";
 const PRE_TOOL_USE_INPUT_FIXTURE: &str = "pre-tool-use.command.input.schema.json";
 const PRE_TOOL_USE_OUTPUT_FIXTURE: &str = "pre-tool-use.command.output.schema.json";
+const PRE_SKILL_USE_INPUT_FIXTURE: &str = "pre-skill-use.command.input.schema.json";
+const PRE_SKILL_USE_OUTPUT_FIXTURE: &str = "pre-skill-use.command.output.schema.json";
 const SESSION_START_INPUT_FIXTURE: &str = "session-start.command.input.schema.json";
 const SESSION_START_OUTPUT_FIXTURE: &str = "session-start.command.output.schema.json";
 const USER_PROMPT_SUBMIT_INPUT_FIXTURE: &str = "user-prompt-submit.command.input.schema.json";
@@ -71,6 +75,10 @@ pub(crate) enum HookEventNameWire {
     PreToolUse,
     #[serde(rename = "PostToolUse")]
     PostToolUse,
+    #[serde(rename = "PreSkillUse")]
+    PreSkillUse,
+    #[serde(rename = "PostSkillUse")]
+    PostSkillUse,
     #[serde(rename = "SessionStart")]
     SessionStart,
     #[serde(rename = "UserPromptSubmit")]
@@ -112,6 +120,17 @@ pub(crate) struct PostToolUseCommandOutputWire {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "post-skill-use.command.output")]
+pub(crate) struct PostSkillUseCommandOutputWire {
+    #[serde(flatten)]
+    pub universal: HookUniversalOutputWire,
+    #[serde(default)]
+    pub hook_specific_output: Option<PostSkillUseHookSpecificOutputWire>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub(crate) struct PostToolUseHookSpecificOutputWire {
     pub hook_event_name: HookEventNameWire,
     #[serde(default)]
@@ -119,6 +138,15 @@ pub(crate) struct PostToolUseHookSpecificOutputWire {
     #[serde(default)]
     #[serde(rename = "updatedMCPToolOutput")]
     pub updated_mcp_tool_output: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PostSkillUseHookSpecificOutputWire {
+    pub hook_event_name: HookEventNameWire,
+    #[serde(default)]
+    pub additional_context: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -134,6 +162,15 @@ pub(crate) struct PreToolUseHookSpecificOutputWire {
     pub updated_input: Option<Value>,
     #[serde(default)]
     pub additional_context: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "pre-skill-use.command.output")]
+pub(crate) struct PreSkillUseCommandOutputWire {
+    #[serde(flatten)]
+    pub universal: HookUniversalOutputWire,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -207,6 +244,50 @@ pub(crate) struct PostToolUseCommandInput {
     pub tool_input: PostToolUseToolInput,
     pub tool_response: Value,
     pub tool_use_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "pre-skill-use.command.input")]
+pub(crate) struct PreSkillUseCommandInput {
+    pub session_id: String,
+    /// Codex extension: expose the active turn id to internal turn-scoped hooks.
+    pub turn_id: String,
+    pub transcript_path: NullableString,
+    pub cwd: String,
+    #[schemars(schema_with = "pre_skill_use_hook_event_name_schema")]
+    pub hook_event_name: String,
+    pub model: String,
+    #[schemars(schema_with = "permission_mode_schema")]
+    pub permission_mode: String,
+    pub skill_name: String,
+    pub skill_path: String,
+    #[schemars(schema_with = "skill_scope_schema")]
+    pub skill_scope: String,
+    #[schemars(schema_with = "invocation_type_schema")]
+    pub invocation_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "post-skill-use.command.input")]
+pub(crate) struct PostSkillUseCommandInput {
+    pub session_id: String,
+    /// Codex extension: expose the active turn id to internal turn-scoped hooks.
+    pub turn_id: String,
+    pub transcript_path: NullableString,
+    pub cwd: String,
+    #[schemars(schema_with = "post_skill_use_hook_event_name_schema")]
+    pub hook_event_name: String,
+    pub model: String,
+    #[schemars(schema_with = "permission_mode_schema")]
+    pub permission_mode: String,
+    pub skill_name: String,
+    pub skill_path: String,
+    #[schemars(schema_with = "skill_scope_schema")]
+    pub skill_scope: String,
+    #[schemars(schema_with = "invocation_type_schema")]
+    pub invocation_type: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -359,12 +440,28 @@ pub fn write_schema_fixtures(schema_root: &Path) -> anyhow::Result<()> {
         schema_json::<PostToolUseCommandOutputWire>()?,
     )?;
     write_schema(
+        &generated_dir.join(POST_SKILL_USE_INPUT_FIXTURE),
+        schema_json::<PostSkillUseCommandInput>()?,
+    )?;
+    write_schema(
+        &generated_dir.join(POST_SKILL_USE_OUTPUT_FIXTURE),
+        schema_json::<PostSkillUseCommandOutputWire>()?,
+    )?;
+    write_schema(
         &generated_dir.join(PRE_TOOL_USE_INPUT_FIXTURE),
         schema_json::<PreToolUseCommandInput>()?,
     )?;
     write_schema(
         &generated_dir.join(PRE_TOOL_USE_OUTPUT_FIXTURE),
         schema_json::<PreToolUseCommandOutputWire>()?,
+    )?;
+    write_schema(
+        &generated_dir.join(PRE_SKILL_USE_INPUT_FIXTURE),
+        schema_json::<PreSkillUseCommandInput>()?,
+    )?;
+    write_schema(
+        &generated_dir.join(PRE_SKILL_USE_OUTPUT_FIXTURE),
+        schema_json::<PreSkillUseCommandOutputWire>()?,
     )?;
     write_schema(
         &generated_dir.join(SESSION_START_INPUT_FIXTURE),
@@ -453,12 +550,20 @@ fn post_tool_use_hook_event_name_schema(_gen: &mut SchemaGenerator) -> Schema {
     string_const_schema("PostToolUse")
 }
 
+fn post_skill_use_hook_event_name_schema(_gen: &mut SchemaGenerator) -> Schema {
+    string_const_schema("PostSkillUse")
+}
+
 fn post_tool_use_tool_name_schema(_gen: &mut SchemaGenerator) -> Schema {
     string_const_schema("Bash")
 }
 
 fn pre_tool_use_hook_event_name_schema(_gen: &mut SchemaGenerator) -> Schema {
     string_const_schema("PreToolUse")
+}
+
+fn pre_skill_use_hook_event_name_schema(_gen: &mut SchemaGenerator) -> Schema {
+    string_const_schema("PreSkillUse")
 }
 
 fn pre_tool_use_tool_name_schema(_gen: &mut SchemaGenerator) -> Schema {
@@ -481,6 +586,14 @@ fn permission_mode_schema(_gen: &mut SchemaGenerator) -> Schema {
         "dontAsk",
         "bypassPermissions",
     ])
+}
+
+fn skill_scope_schema(_gen: &mut SchemaGenerator) -> Schema {
+    string_enum_schema(&["user", "repo", "system", "admin"])
+}
+
+fn invocation_type_schema(_gen: &mut SchemaGenerator) -> Schema {
+    string_enum_schema(&["explicit", "implicit"])
 }
 
 fn session_start_source_schema(_gen: &mut SchemaGenerator) -> Schema {
@@ -516,11 +629,17 @@ fn default_continue() -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::POST_SKILL_USE_INPUT_FIXTURE;
+    use super::POST_SKILL_USE_OUTPUT_FIXTURE;
     use super::POST_TOOL_USE_INPUT_FIXTURE;
     use super::POST_TOOL_USE_OUTPUT_FIXTURE;
+    use super::PRE_SKILL_USE_INPUT_FIXTURE;
+    use super::PRE_SKILL_USE_OUTPUT_FIXTURE;
     use super::PRE_TOOL_USE_INPUT_FIXTURE;
     use super::PRE_TOOL_USE_OUTPUT_FIXTURE;
+    use super::PostSkillUseCommandInput;
     use super::PostToolUseCommandInput;
+    use super::PreSkillUseCommandInput;
     use super::PreToolUseCommandInput;
     use super::SESSION_START_INPUT_FIXTURE;
     use super::SESSION_START_OUTPUT_FIXTURE;
@@ -544,11 +663,23 @@ mod tests {
             POST_TOOL_USE_OUTPUT_FIXTURE => {
                 include_str!("../schema/generated/post-tool-use.command.output.schema.json")
             }
+            POST_SKILL_USE_INPUT_FIXTURE => {
+                include_str!("../schema/generated/post-skill-use.command.input.schema.json")
+            }
+            POST_SKILL_USE_OUTPUT_FIXTURE => {
+                include_str!("../schema/generated/post-skill-use.command.output.schema.json")
+            }
             PRE_TOOL_USE_INPUT_FIXTURE => {
                 include_str!("../schema/generated/pre-tool-use.command.input.schema.json")
             }
             PRE_TOOL_USE_OUTPUT_FIXTURE => {
                 include_str!("../schema/generated/pre-tool-use.command.output.schema.json")
+            }
+            PRE_SKILL_USE_INPUT_FIXTURE => {
+                include_str!("../schema/generated/pre-skill-use.command.input.schema.json")
+            }
+            PRE_SKILL_USE_OUTPUT_FIXTURE => {
+                include_str!("../schema/generated/pre-skill-use.command.output.schema.json")
             }
             SESSION_START_INPUT_FIXTURE => {
                 include_str!("../schema/generated/session-start.command.input.schema.json")
@@ -585,8 +716,12 @@ mod tests {
         for fixture in [
             POST_TOOL_USE_INPUT_FIXTURE,
             POST_TOOL_USE_OUTPUT_FIXTURE,
+            POST_SKILL_USE_INPUT_FIXTURE,
+            POST_SKILL_USE_OUTPUT_FIXTURE,
             PRE_TOOL_USE_INPUT_FIXTURE,
             PRE_TOOL_USE_OUTPUT_FIXTURE,
+            PRE_SKILL_USE_INPUT_FIXTURE,
+            PRE_SKILL_USE_OUTPUT_FIXTURE,
             SESSION_START_INPUT_FIXTURE,
             SESSION_START_OUTPUT_FIXTURE,
             USER_PROMPT_SUBMIT_INPUT_FIXTURE,
@@ -615,6 +750,16 @@ mod tests {
                 .expect("serialize post tool use input schema"),
         )
         .expect("parse post tool use input schema");
+        let pre_skill_use: Value = serde_json::from_slice(
+            &schema_json::<PreSkillUseCommandInput>()
+                .expect("serialize pre skill use input schema"),
+        )
+        .expect("parse pre skill use input schema");
+        let post_skill_use: Value = serde_json::from_slice(
+            &schema_json::<PostSkillUseCommandInput>()
+                .expect("serialize post skill use input schema"),
+        )
+        .expect("parse post skill use input schema");
         let user_prompt_submit: Value = serde_json::from_slice(
             &schema_json::<UserPromptSubmitCommandInput>()
                 .expect("serialize user prompt submit input schema"),
@@ -625,7 +770,14 @@ mod tests {
         )
         .expect("parse stop input schema");
 
-        for schema in [&pre_tool_use, &post_tool_use, &user_prompt_submit, &stop] {
+        for schema in [
+            &pre_tool_use,
+            &post_tool_use,
+            &pre_skill_use,
+            &post_skill_use,
+            &user_prompt_submit,
+            &stop,
+        ] {
             assert_eq!(schema["properties"]["turn_id"]["type"], "string");
             assert!(
                 schema["required"]

@@ -36,6 +36,14 @@ const FIRST_CONTINUATION_PROMPT: &str = "Retry with exactly the phrase meow meow
 const SECOND_CONTINUATION_PROMPT: &str = "Now tighten it to just: meow.";
 const BLOCKED_PROMPT_CONTEXT: &str = "Remember the blocked lighthouse note.";
 
+fn write_skill(home: &Path, name: &str, description: &str, body: &str) -> Result<()> {
+    let skill_dir = home.join("skills").join(name);
+    fs::create_dir_all(&skill_dir).context("create skill fixture directory")?;
+    let contents = format!("---\nname: {name}\ndescription: {description}\n---\n\n{body}\n");
+    fs::write(skill_dir.join("SKILL.md"), contents).context("write skill fixture")?;
+    Ok(())
+}
+
 fn write_stop_hook(home: &Path, block_prompts: &[&str]) -> Result<()> {
     let script_path = home.join("stop_hook.py");
     let log_path = home.join("stop_hook_log.jsonl");
@@ -309,6 +317,83 @@ elif mode == "exit_2":
     Ok(())
 }
 
+fn write_skill_use_hooks(
+    home: &Path,
+    matcher: Option<&str>,
+    additional_context: &str,
+) -> Result<()> {
+    let pre_script_path = home.join("pre_skill_use_hook.py");
+    let pre_log_path = home.join("pre_skill_use_hook_log.jsonl");
+    let pre_script = format!(
+        r#"import json
+from pathlib import Path
+import sys
+
+payload = json.load(sys.stdin)
+with Path(r"{log_path}").open("a", encoding="utf-8") as handle:
+    handle.write(json.dumps(payload) + "\n")
+
+print(json.dumps({{"systemMessage": "pre skill observed"}}))
+"#,
+        log_path = pre_log_path.display(),
+    );
+
+    let post_script_path = home.join("post_skill_use_hook.py");
+    let post_log_path = home.join("post_skill_use_hook_log.jsonl");
+    let additional_context_json = serde_json::to_string(additional_context)
+        .context("serialize post skill use additional context")?;
+    let post_script = format!(
+        r#"import json
+from pathlib import Path
+import sys
+
+payload = json.load(sys.stdin)
+with Path(r"{log_path}").open("a", encoding="utf-8") as handle:
+    handle.write(json.dumps(payload) + "\n")
+
+print(json.dumps({{
+    "hookSpecificOutput": {{
+        "hookEventName": "PostSkillUse",
+        "additionalContext": {additional_context_json}
+    }}
+}}))
+"#,
+        log_path = post_log_path.display(),
+        additional_context_json = additional_context_json,
+    );
+
+    let mut pre_group = serde_json::json!({
+        "hooks": [{
+            "type": "command",
+            "command": format!("python3 {}", pre_script_path.display()),
+            "statusMessage": "running pre skill use hook",
+        }]
+    });
+    let mut post_group = serde_json::json!({
+        "hooks": [{
+            "type": "command",
+            "command": format!("python3 {}", post_script_path.display()),
+            "statusMessage": "running post skill use hook",
+        }]
+    });
+    if let Some(matcher) = matcher {
+        pre_group["matcher"] = Value::String(matcher.to_string());
+        post_group["matcher"] = Value::String(matcher.to_string());
+    }
+
+    let hooks = serde_json::json!({
+        "hooks": {
+            "PreSkillUse": [pre_group],
+            "PostSkillUse": [post_group],
+        }
+    });
+
+    fs::write(&pre_script_path, pre_script).context("write pre skill use hook script")?;
+    fs::write(&post_script_path, post_script).context("write post skill use hook script")?;
+    fs::write(home.join("hooks.json"), hooks.to_string()).context("write hooks.json")?;
+    Ok(())
+}
+
 fn write_session_start_hook_recording_transcript(home: &Path) -> Result<()> {
     let script_path = home.join("session_start_hook.py");
     let log_path = home.join("session_start_hook_log.jsonl");
@@ -403,6 +488,24 @@ fn read_post_tool_use_hook_inputs(home: &Path) -> Result<Vec<serde_json::Value>>
         .lines()
         .filter(|line| !line.trim().is_empty())
         .map(|line| serde_json::from_str(line).context("parse post tool use hook log line"))
+        .collect()
+}
+
+fn read_pre_skill_use_hook_inputs(home: &Path) -> Result<Vec<serde_json::Value>> {
+    fs::read_to_string(home.join("pre_skill_use_hook_log.jsonl"))
+        .context("read pre skill use hook log")?
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| serde_json::from_str(line).context("parse pre skill use hook log line"))
+        .collect()
+}
+
+fn read_post_skill_use_hook_inputs(home: &Path) -> Result<Vec<serde_json::Value>> {
+    fs::read_to_string(home.join("post_skill_use_hook_log.jsonl"))
+        .context("read post skill use hook log")?
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| serde_json::from_str(line).context("parse post skill use hook log line"))
         .collect()
 }
 
@@ -1738,6 +1841,149 @@ async fn post_tool_use_exit_two_replaces_one_shot_exec_command_output_with_feedb
     assert_eq!(
         hook_inputs[0]["tool_response"],
         Value::String("post-hook-output".to_string())
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn explicit_skill_hooks_receive_selected_skill() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let _responses = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_assistant_message("msg-1", "used the requested skill"),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+
+    let mut builder = test_codex()
+        .with_pre_build_hook(|home| {
+            if let Err(error) =
+                write_skill_use_hooks(home, Some("^demo$"), "remember explicit demo skill")
+            {
+                panic!("failed to write skill use hooks fixture: {error}");
+            }
+            if let Err(error) = write_skill(home, "demo", "demo skill", "skill body") {
+                panic!("failed to write skill fixture: {error}");
+            }
+        })
+        .with_config(|config| {
+            config
+                .features
+                .enable(Feature::CodexHooks)
+                .expect("test config should allow feature update");
+        });
+    let test = builder.build(&server).await?;
+
+    test.submit_turn("please use $demo").await?;
+
+    let pre_hook_inputs = read_pre_skill_use_hook_inputs(test.codex_home_path())?;
+    assert_eq!(pre_hook_inputs.len(), 1);
+    assert_eq!(
+        pre_hook_inputs[0]["skill_name"],
+        Value::String("demo".to_string())
+    );
+    assert_eq!(
+        pre_hook_inputs[0]["invocation_type"],
+        Value::String("explicit".to_string())
+    );
+
+    let post_hook_inputs = read_post_skill_use_hook_inputs(test.codex_home_path())?;
+    assert_eq!(post_hook_inputs.len(), 1);
+    assert_eq!(
+        post_hook_inputs[0]["skill_name"],
+        Value::String("demo".to_string())
+    );
+    assert_eq!(
+        post_hook_inputs[0]["invocation_type"],
+        Value::String("explicit".to_string())
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn implicit_skill_hooks_receive_detected_skill() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let mut builder = test_codex()
+        .with_pre_build_hook(|home| {
+            if let Err(error) =
+                write_skill_use_hooks(home, Some("^demo$"), "remember implicit demo skill")
+            {
+                panic!("failed to write skill use hooks fixture: {error}");
+            }
+            if let Err(error) = write_skill(home, "demo", "demo skill", "skill body") {
+                panic!("failed to write skill fixture: {error}");
+            }
+        })
+        .with_config(|config| {
+            config
+                .features
+                .enable(Feature::CodexHooks)
+                .expect("test config should allow feature update");
+        });
+    let test = builder.build(&server).await?;
+
+    let skill_path = test
+        .home
+        .path()
+        .join("skills")
+        .join("demo")
+        .join("SKILL.md");
+    let args = serde_json::json!({
+        "command": format!("cat {}", skill_path.display())
+    });
+    let _responses = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                ev_response_created("resp-1"),
+                core_test_support::responses::ev_function_call(
+                    "implicit-skill-call",
+                    "shell_command",
+                    &serde_json::to_string(&args)?,
+                ),
+                ev_completed("resp-1"),
+            ]),
+            sse(vec![
+                ev_response_created("resp-2"),
+                ev_assistant_message("msg-1", "used the implicit skill"),
+                ev_completed("resp-2"),
+            ]),
+        ],
+    )
+    .await;
+
+    test.submit_turn("read the demo skill file and then answer")
+        .await?;
+
+    let pre_hook_inputs = read_pre_skill_use_hook_inputs(test.codex_home_path())?;
+    assert_eq!(pre_hook_inputs.len(), 1);
+    assert_eq!(
+        pre_hook_inputs[0]["skill_name"],
+        Value::String("demo".to_string())
+    );
+    assert_eq!(
+        pre_hook_inputs[0]["invocation_type"],
+        Value::String("implicit".to_string())
+    );
+
+    let post_hook_inputs = read_post_skill_use_hook_inputs(test.codex_home_path())?;
+    assert_eq!(post_hook_inputs.len(), 1);
+    assert_eq!(
+        post_hook_inputs[0]["skill_name"],
+        Value::String("demo".to_string())
+    );
+    assert_eq!(
+        post_hook_inputs[0]["invocation_type"],
+        Value::String("implicit".to_string())
     );
 
     Ok(())

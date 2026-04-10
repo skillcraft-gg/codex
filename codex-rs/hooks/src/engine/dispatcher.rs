@@ -33,6 +33,8 @@ pub(crate) fn select_handlers(
         .filter(|handler| match event_name {
             HookEventName::PreToolUse
             | HookEventName::PostToolUse
+            | HookEventName::PreSkillUse
+            | HookEventName::PostSkillUse
             | HookEventName::SessionStart => {
                 matches_matcher(handler.matcher.as_deref(), matcher_input)
             }
@@ -110,6 +112,8 @@ fn scope_for_event(event_name: HookEventName) -> HookScope {
         HookEventName::SessionStart => HookScope::Thread,
         HookEventName::PreToolUse
         | HookEventName::PostToolUse
+        | HookEventName::PreSkillUse
+        | HookEventName::PostSkillUse
         | HookEventName::UserPromptSubmit
         | HookEventName::Stop => HookScope::Turn,
     }
@@ -230,6 +234,52 @@ mod tests {
         ];
 
         let selected = select_handlers(&handlers, HookEventName::PostToolUse, Some("Bash"));
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].display_order, 0);
+    }
+
+    #[test]
+    fn pre_skill_use_matches_skill_name() {
+        let handlers = vec![
+            make_handler(
+                HookEventName::PreSkillUse,
+                Some("^demo$"),
+                "echo same",
+                /*display_order*/ 0,
+            ),
+            make_handler(
+                HookEventName::PreSkillUse,
+                Some("^other$"),
+                "echo same",
+                /*display_order*/ 1,
+            ),
+        ];
+
+        let selected = select_handlers(&handlers, HookEventName::PreSkillUse, Some("demo"));
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].display_order, 0);
+    }
+
+    #[test]
+    fn post_skill_use_matches_skill_name() {
+        let handlers = vec![
+            make_handler(
+                HookEventName::PostSkillUse,
+                Some("^demo$"),
+                "echo same",
+                /*display_order*/ 0,
+            ),
+            make_handler(
+                HookEventName::PostSkillUse,
+                Some("^other$"),
+                "echo same",
+                /*display_order*/ 1,
+            ),
+        ];
+
+        let selected = select_handlers(&handlers, HookEventName::PostSkillUse, Some("demo"));
 
         assert_eq!(selected.len(), 1);
         assert_eq!(selected[0].display_order, 0);

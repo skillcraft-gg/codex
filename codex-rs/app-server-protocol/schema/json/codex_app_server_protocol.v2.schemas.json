@@ -5234,6 +5234,8 @@
       "enum": [
         "preToolUse",
         "postToolUse",
+        "preSkillUse",
+        "postSkillUse",
         "sessionStart",
         "userPromptSubmit",
         "stop"

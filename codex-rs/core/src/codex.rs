@@ -52,6 +52,7 @@ use chrono::Utc;
 use codex_analytics::AnalyticsEventsClient;
 use codex_analytics::AppInvocation;
 use codex_analytics::InvocationType;
+use codex_analytics::SkillInvocation;
 use codex_analytics::SubAgentThreadStartedInput;
 use codex_analytics::build_track_events_context;
 use codex_app_server_protocol::AuthMode;
@@ -266,6 +267,8 @@ use crate::hook_runtime::inspect_pending_input;
 use crate::hook_runtime::record_additional_contexts;
 use crate::hook_runtime::record_pending_input;
 use crate::hook_runtime::run_pending_session_start_hooks;
+use crate::hook_runtime::run_post_skill_use_hooks;
+use crate::hook_runtime::run_pre_skill_use_hooks;
 use crate::hook_runtime::run_user_prompt_submit_hooks;
 use crate::injection::ToolMentionKind;
 use crate::injection::app_id_from_path;
@@ -6112,8 +6115,22 @@ pub(crate) async fn run_turn(
         thread_id,
         turn_context.sub_id.clone(),
     );
+    for skill in &mentioned_skills {
+        run_pre_skill_use_hooks(
+            &sess,
+            &turn_context,
+            &SkillInvocation {
+                skill_name: skill.name.clone(),
+                skill_scope: skill.scope,
+                skill_path: skill.path_to_skills_md.clone(),
+                invocation_type: InvocationType::Explicit,
+            },
+        )
+        .await;
+    }
     let SkillInjections {
         items: skill_items,
+        loaded_skills,
         warnings: skill_warnings,
     } = build_skill_injections(
         &mentioned_skills,
@@ -6126,6 +6143,22 @@ pub(crate) async fn run_turn(
     for message in skill_warnings {
         sess.send_event(&turn_context, EventMsg::Warning(WarningEvent { message }))
             .await;
+    }
+
+    let mut skill_hook_additional_contexts = Vec::new();
+    for skill in &loaded_skills {
+        let outcome = run_post_skill_use_hooks(
+            &sess,
+            &turn_context,
+            &SkillInvocation {
+                skill_name: skill.name.clone(),
+                skill_scope: skill.scope,
+                skill_path: skill.path_to_skills_md.clone(),
+                invocation_type: InvocationType::Explicit,
+            },
+        )
+        .await;
+        skill_hook_additional_contexts.extend(outcome.additional_contexts);
     }
 
     let plugin_items =
@@ -6194,6 +6227,7 @@ pub(crate) async fn run_turn(
     sess.merge_connector_selection(explicitly_enabled_connectors.clone())
         .await;
     record_additional_contexts(&sess, &turn_context, additional_contexts).await;
+    record_additional_contexts(&sess, &turn_context, skill_hook_additional_contexts).await;
     if !input.is_empty() {
         // Track the previous-turn baseline from the regular user-turn path only so
         // standalone tasks (compact/shell/review/undo) cannot suppress future

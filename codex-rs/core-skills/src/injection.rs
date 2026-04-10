@@ -18,6 +18,7 @@ use tokio::fs;
 #[derive(Debug, Default)]
 pub struct SkillInjections {
     pub items: Vec<ResponseItem>,
+    pub loaded_skills: Vec<SkillMetadata>,
     pub warnings: Vec<String>,
 }
 
@@ -33,6 +34,7 @@ pub async fn build_skill_injections(
 
     let mut result = SkillInjections {
         items: Vec::with_capacity(mentioned_skills.len()),
+        loaded_skills: Vec::with_capacity(mentioned_skills.len()),
         warnings: Vec::new(),
     };
     let mut invocations = Vec::new();
@@ -47,6 +49,7 @@ pub async fn build_skill_injections(
                     skill_path: skill.path_to_skills_md.clone(),
                     invocation_type: InvocationType::Explicit,
                 });
+                result.loaded_skills.push(skill.clone());
                 result.items.push(ResponseItem::from(SkillInstructions {
                     name: skill.name.clone(),
                     path: skill.path_to_skills_md.to_string_lossy().into_owned(),

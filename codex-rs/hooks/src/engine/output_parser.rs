@@ -13,6 +13,18 @@ pub(crate) struct SessionStartOutput {
 }
 
 #[derive(Debug, Clone)]
+pub(crate) struct PostSkillUseOutput {
+    pub universal: UniversalOutput,
+    pub additional_context: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct PreSkillUseOutput {
+    pub universal: UniversalOutput,
+    pub invalid_reason: Option<String>,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct PreToolUseOutput {
     pub universal: UniversalOutput,
     pub block_reason: Option<String>,
@@ -48,7 +60,9 @@ pub(crate) struct StopOutput {
 
 use crate::schema::BlockDecisionWire;
 use crate::schema::HookUniversalOutputWire;
+use crate::schema::PostSkillUseCommandOutputWire;
 use crate::schema::PostToolUseCommandOutputWire;
+use crate::schema::PreSkillUseCommandOutputWire;
 use crate::schema::PreToolUseCommandOutputWire;
 use crate::schema::PreToolUseDecisionWire;
 use crate::schema::PreToolUsePermissionDecisionWire;
@@ -62,6 +76,27 @@ pub(crate) fn parse_session_start(stdout: &str) -> Option<SessionStartOutput> {
         .hook_specific_output
         .and_then(|output| output.additional_context);
     Some(SessionStartOutput {
+        universal: UniversalOutput::from(wire.universal),
+        additional_context,
+    })
+}
+
+pub(crate) fn parse_pre_skill_use(stdout: &str) -> Option<PreSkillUseOutput> {
+    let wire: PreSkillUseCommandOutputWire = parse_json(stdout)?;
+    let universal = UniversalOutput::from(wire.universal);
+    let invalid_reason = unsupported_pre_skill_use_universal(&universal);
+    Some(PreSkillUseOutput {
+        universal,
+        invalid_reason,
+    })
+}
+
+pub(crate) fn parse_post_skill_use(stdout: &str) -> Option<PostSkillUseOutput> {
+    let wire: PostSkillUseCommandOutputWire = parse_json(stdout)?;
+    let additional_context = wire
+        .hook_specific_output
+        .and_then(|output| output.additional_context);
+    Some(PostSkillUseOutput {
         universal: UniversalOutput::from(wire.universal),
         additional_context,
     })
@@ -230,6 +265,18 @@ fn unsupported_pre_tool_use_universal(universal: &UniversalOutput) -> Option<Str
         Some("PreToolUse hook returned unsupported stopReason".to_string())
     } else if universal.suppress_output {
         Some("PreToolUse hook returned unsupported suppressOutput".to_string())
+    } else {
+        None
+    }
+}
+
+fn unsupported_pre_skill_use_universal(universal: &UniversalOutput) -> Option<String> {
+    if !universal.continue_processing {
+        Some("PreSkillUse hook returned unsupported continue:false".to_string())
+    } else if universal.stop_reason.is_some() {
+        Some("PreSkillUse hook returned unsupported stopReason".to_string())
+    } else if universal.suppress_output {
+        Some("PreSkillUse hook returned unsupported suppressOutput".to_string())
     } else {
         None
     }
